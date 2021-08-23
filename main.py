@@ -181,7 +181,7 @@ class vexologist(object):
                 emoji = line[24] #clouds descends has emoji in a weird place
                 racers_temp_totals[emoji][8] +=1
             elif self.urn_smashed.search(line):
-                #based on api data not posted to discord so might change
+                #not clear what this does yet
                 racers_temp_totals[emoji][9] +=1
                 print(line)
 
