@@ -206,7 +206,7 @@ if __name__ == "__main__":
     #    test_data = json.load(f) 
     #datahandler.parse_race(test_data)
 
-    data_dir = "../json/Intermission_1/races"
+    data_dir = "../json/races"
 
     for file_n in listdir(data_dir):
         file_full = path.join(data_dir,file_n)
