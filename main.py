@@ -60,6 +60,7 @@ class vexologist(object):
             self.conn = sqlite3.connect(database)
             self.cur = self.conn.cursor()
 
+        self.pit_stop= re.compile("(.*) waved from the Pit Stop!")
         self.bonk_S  = re.compile("bonked .* off the track")
         self.bonk_F  = re.compile("bonked into")
         self.plough  = re.compile("ploughed through a snowman")
@@ -101,6 +102,7 @@ class vexologist(object):
     
     #parse race and update racers records
     def parse_race(self,race_json):
+        colnames = ["Firsts","Seconds","Thirds","Fourths","Fifths","Sixths","Sevenths","Eighths"]
         cup    = race_json["cup"]["name"]
         race_n = race_json["cup"]["racenum"]
 
@@ -136,12 +138,18 @@ class vexologist(object):
         for line in feed[9:]:
             #print(line)
             emoji = line[2]
-            if self.steal.search(line):
+            if self.pit_stop.search(line):
+                #pit_re =  self.pit_stop.search(line)
+                name = self.name.search(line).group(0)[4:-2]
+                self.insert_racer(line[2],name,' ')
+                
+            elif self.steal.search(line):
                 #add new player with all zeros
                 steal_re = self.steal.search(line)
                 stolen_from = steal_re.group(2)[0]
                 racers_temp_totals[line[2]] = [0,0,0,0,0, 0,0,0,0,0]
                 self.insert_racer(line[2],'new_racer?','uhh')#need to link this to peeps.json to pull out who it is
+
                 
             elif self.voided.search(line):
                 #add new player with all zeros
@@ -150,6 +158,7 @@ class vexologist(object):
                 emoji = void_re.group(2)[0]
                 racers_temp_totals[emoji] = [0,0,0,0,0, 0,0,0,0,0]
                 self.insert_racer(emoji,'new_racer?','uhh')#need to link this to peeps.json to pull out who it is
+
                 
             elif self.bonk_S.search(line):
                 #print("succesful bonk")
@@ -183,12 +192,17 @@ class vexologist(object):
             elif self.urn_smashed.search(line):
                 #not clear what this does yet
                 racers_temp_totals[emoji][9] +=1
-                print(line)
 
         for racer_temp in racers_temp_totals.items():
             #print(racer_temp[0],racer_temp[1])
             self.cur.execute("UPDATE Racers SET Bonks=?, Failed_Bonks=?,Ploughs=?,Swerves=?, Tricks_Landed=?, Tricks_Missed=?, Tricks_Flipped=?,Suns_Smile=?,Clouds_Desc=? WHERE Emoji = ?",(racer_temp[1][:9]+[racer_temp[0]]))
-        
+            #if last race of the cup
+        if race_n == 3:
+            results = race_json["cupranking"]
+            for i, colname in enumerate(colnames):
+                self.cur.execute("SELECT %s From Racers WHERE Name = ?"%(colname,),(results[i],))
+                ret = self.cur.fetchone()[0]
+                self.cur.execute("UPDATE Racers SET (%s)= ? WHERE Name =?"%(colname,),(ret+1,results[i]))
             
         self.conn.commit()
 
