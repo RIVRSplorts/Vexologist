@@ -90,6 +90,9 @@ class vexologist(object):
         self.urn_smashed = re.compile("smashed an urn")
         self.beelspin    = re.compile("The bees spin the Bee-l of Fortune!")
 
+        self.roguemarshaled = re.compile("Rogue Marshal revoked (.*?) license!")
+        self.replacement    = re.compile("\*\*(.*? .*?) (.*?)")#too loose to be practical
+
         #extract name in line-up format
         self.name_lineup = re.compile("\*\*(.*?)\*\*")
 
@@ -103,7 +106,7 @@ class vexologist(object):
                                "urns smashed","1st","2nd","3rd","4th",
                                "5th","6th","7th","8th"]
 
-    def insert_racer(self,emoji,name,team):
+    def insert_racer(self,emoji,name='',team='',pitstop=False):
         self.cur.execute("SELECT * FROM racers WHERE Emoji = ?",(emoji,))
         ret = self.cur.fetchone()
         #if there's an empty return, setup their record. note the defaults for stats are 0 so this also populates those columns implicitly
@@ -114,7 +117,11 @@ class vexologist(object):
         else:
             racer_temp_totals = list(ret[5:])
             #ignore which team they're on during parsing as that gets updated at the end
-            self.cur.execute("UPDATE Racers SET Races =? WHERE Emoji = ?",(ret[4]+1,emoji))
+            if pitstop:
+                raced = 0
+            else:
+                raced = 1
+            self.cur.execute("UPDATE Racers SET Races =? WHERE Emoji = ?",(ret[4]+raced,emoji))
 
         self.conn.commit()
         return racer_temp_totals
@@ -152,8 +159,7 @@ class vexologist(object):
                 
                 self.cur.execute("UPDATE Racers SET Stat_ED =?,Stat_BU =?,Stat_VP =?,Stat_LF =?,"+
                          "Stat_CH =?,Stat_CT =?,Stat_HL =?,Stat_SG =?,Stat_MG =?,"+
-                         "Stat_EY =?,Stat_AG =?",(stats['ED'],stats['BU'],stats['VP'],stats['LF'],stats['CH'],
-                                  stats['CT'],stats['HL'],stats['SG'],stats['MG'],stats['EY'],stats['AG']))
+                         "Stat_EY =?,Stat_AG =? WHERE Name = ?",(stats['ED'],stats['BU'],stats['VP'],stats['LF'],stats['CH'],stats['CT'],stats['HL'],stats['SG'],stats['MG'],stats['EY'],stats['AG'],name))
         self.conn.commit()
     #parse race and update racers records
     def parse_race(self,race_json):
@@ -181,6 +187,8 @@ class vexologist(object):
         #parse racers in this race
         racers = feed[1:9]
         for line in feed[1:9]:
+            #flag if a player swap happens
+
             #use emoji as a unique key to check if they've previously been seen / have stats 
             team  = line[0]
             name = self.name_lineup.search(line).group(1)
@@ -189,24 +197,42 @@ class vexologist(object):
         #commit racer insertions
 
         
-        
+        player_swapped_next_line = False 
         for line in feed[9:]:
             #print(line)
+
             name_emoji = self.race_name.search(line)
             bee_check  = self.beelspin.search(line)
+
+            if player_swapped_next_line:
+                #split up the line and reform, assumes players have a two-part name
+                name = ' '.join(line.split(' ')[0:2])[2:]
+                self.cur.execute("SELECT Emoji FROM Racers WHERE Name = ?",(name,))
+                emoji = self.cur.fetchone()[0]
+                racers_temp_totals[emoji] = self.insert_racer(emoji)
+                player_swapped_next_line = False
+                continue
+            
             if name_emoji == None or bee_check:
                 #if line doesn't contain a name match, return
                 #or if line has a beel of fortune spin, which false match with the naming highlights
+                #check if the line isa  steps in line after a rogue marshal 
+
                 continue
+
             name_emoji = name_emoji.group(1)
             emoji = name_emoji.split(' ')[0]
             name  = name_emoji.split(' ')[1]
             
             if self.pit_stop.search(line):
                 #pit_re =  self.pit_stop.search(line)
-                name = self.race_name.search(line).group(0)[4:-2]
-                self.insert_racer(emoji,name,' ')
-                
+                #name = self.race_name.search(line).group(0)[4:-2]
+                self.insert_racer(emoji,pitstop=True)
+
+            elif self.roguemarshaled.search(line):
+                player_swapped_next_line = True #don't think anything needs doing? maybe flag for the replacement on next line?
+
+
             elif self.steal.search(line):
                 #add new player with all zeros
                 #steal_re = self.steal.search(line)
@@ -275,14 +301,16 @@ class vexologist(object):
                     self.cur.execute("UPDATE Racers SET (%s)= ? WHERE Name =?"%(colname,),(ret+1,results[i]))
             except KeyError:
                 print('data missing cup ranking!')
-                pass
+            except IndexError:
+                print('uhh we lost a player somewhere chief')
+
         self.conn.commit()
 
             
 if __name__ == "__main__":
     #test = "../Vexologist/The Cider Gravy Boat_2_2021-08-20 22:12:16.json"
 
-    database = './vexbase.db'
+    database = './vexbase_all.db'
 
     datahandler = vexologist(database)
 
@@ -292,16 +320,19 @@ if __name__ == "__main__":
     #    test_data = json.load(f) 
     #datahandler.parse_race(test_data)
 
-    data_dir = "../json/races/"
+    data_dir = "../json/races"
 
     datahandler.update_racers()
     datahandler.update_racer_stats()
     
     for file_n in listdir(data_dir):
         file_full = path.join(data_dir,file_n)
-        with open(file_full, 'r') as f:
-            json_dump = json.load(f)
-        datahandler.parse_race(json_dump)
+        try:
+            with open(file_full, 'r') as f:
+                json_dump = json.load(f)
+            datahandler.parse_race(json_dump)
+        except IsADirectoryError:
+            pass
     
 
     
