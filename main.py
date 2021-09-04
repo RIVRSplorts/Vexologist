@@ -42,17 +42,20 @@ class vexologist(object):
             "Sixths"          INTEGER DEFAULT 0,
             "Sevenths"        INTEGER DEFAULT 0,
             "Eighths"         INTEGER DEFAULT 0,
-            "Stat_ED"         INTEGER DEFAULT 0,
-            "Stat_BU"         INTEGER DEFAULT 0,
-            "Stat_VP"         INTEGER DEFAULT 0,
-            "Stat_LF"         INTEGER DEFAULT 0,
-            "Stat_CH"         INTEGER DEFAULT 0,
-            "Stat_CT"         INTEGER DEFAULT 0,
-            "Stat_HL"         INTEGER DEFAULT 0,
-            "Stat_SG"         INTEGER DEFAULT 0,
-            "Stat_MG"         INTEGER DEFAULT 0,
-            "Stat_EY"         INTEGER DEFAULT 0,
-            "Stat_AG"         INTEGER DEFAULT 0,
+            "Spice_mu"        REAL    DEFAULT 0,
+            "Spice_sigma"     REAL    DEFAULT 0,
+            "Stats_total"     REAL    DEFAULT 0,
+            "Stat_ED"         REAL    DEFAULT 0,
+            "Stat_BU"         REAL    DEFAULT 0,
+            "Stat_VP"         REAL    DEFAULT 0,
+            "Stat_LF"         REAL    DEFAULT 0,
+            "Stat_CH"         REAL    DEFAULT 0,
+            "Stat_CT"         REAL    DEFAULT 0,
+            "Stat_HL"         REAL    DEFAULT 0,
+            "Stat_SG"         REAL    DEFAULT 0,
+            "Stat_MG"         REAL    DEFAULT 0,
+            "Stat_EY"         REAL    DEFAULT 0,
+            "Stat_AG"         REAL DEFAULT 0,
             PRIMARY KEY("Racer_ID")
             )''')
 
@@ -156,10 +159,11 @@ class vexologist(object):
             for player in player_sublist.items():
                 name = player[0]
                 stats = player[1]['stats']
-                
-                self.cur.execute("UPDATE Racers SET Stat_ED =?,Stat_BU =?,Stat_VP =?,Stat_LF =?,"+
+                total_stats = sum(stats.values())
+                spice = player[1]['spice']
+                self.cur.execute("UPDATE Racers SET Spice_mu =?,Spice_sigma =?, Stats_total =?,Stat_ED =?,Stat_BU =?,Stat_VP =?,Stat_LF =?,"+
                          "Stat_CH =?,Stat_CT =?,Stat_HL =?,Stat_SG =?,Stat_MG =?,"+
-                         "Stat_EY =?,Stat_AG =? WHERE Name = ?",(stats['ED'],stats['BU'],stats['VP'],stats['LF'],stats['CH'],stats['CT'],stats['HL'],stats['SG'],stats['MG'],stats['EY'],stats['AG'],name))
+                         "Stat_EY =?,Stat_AG =? WHERE Name = ?",(spice["mu"],spice["sigma"],total_stats,stats['ED'],stats['BU'],stats['VP'],stats['LF'],stats['CH'],stats['CT'],stats['HL'],stats['SG'],stats['MG'],stats['EY'],stats['AG'],name))
         self.conn.commit()
     #parse race and update racers records
     def parse_race(self,race_json):
@@ -310,7 +314,7 @@ class vexologist(object):
 if __name__ == "__main__":
     #test = "../Vexologist/The Cider Gravy Boat_2_2021-08-20 22:12:16.json"
 
-    database = './vexbase_all.db'
+    database = './vexbase_BETAMAX.db'
 
     datahandler = vexologist(database)
 
@@ -320,7 +324,7 @@ if __name__ == "__main__":
     #    test_data = json.load(f) 
     #datahandler.parse_race(test_data)
 
-    data_dir = "../json/races"
+    data_dir = "../json/races/"
 
     datahandler.update_racers()
     datahandler.update_racer_stats()
