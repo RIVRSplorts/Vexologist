@@ -12,8 +12,9 @@ from os import path, listdir
 
 
 class vexologist(object):
-    def __init__(self,database):
+    def __init__(self,database,racers_json_path='../json/racers'):
 
+        self.racers_json_path = racers_json_path
 
         if not path.isfile(database):
             self.conn = sqlite3.connect(database)
@@ -23,6 +24,7 @@ class vexologist(object):
 	    "Emoji"           TEXT UNIQUE,
 	    "Name"	      TEXT,
             "Team"            TEXT,
+            "Origins"          TEXT,
             "Races"           INTEGER DEFAULT 0,
             "Bonks"	      INTEGER DEFAULT 0,
 	    "Failed_Bonks"    INTEGER DEFAULT 0,
@@ -118,13 +120,13 @@ class vexologist(object):
             self.update_racers()
             racer_temp_totals = [0,0,0,0,0, 0,0,0,0,0]
         else:
-            racer_temp_totals = list(ret[5:])
+            racer_temp_totals = list(ret[6:])
             #ignore which team they're on during parsing as that gets updated at the end
             if pitstop:
                 raced = 0
             else:
                 raced = 1
-            self.cur.execute("UPDATE Racers SET Races =? WHERE Emoji = ?",(ret[4]+raced,emoji))
+            self.cur.execute("UPDATE Racers SET Races =? WHERE Emoji = ?",(ret[5]+raced,emoji))
 
         self.conn.commit()
         return racer_temp_totals
@@ -132,8 +134,8 @@ class vexologist(object):
     
     def update_racers(self):
         #update or insert all record of active racers
-        last_update = sorted(listdir('../json/racers/'))[-1]
-        with open(path.join('../json/racers/',last_update), 'r') as f:
+        last_update = sorted(listdir(self.racers_json_path))[-1]
+        with open(path.join(self.racers_json_path,last_update), 'r') as f:
             racers_file = json.load(f)
             
         allplayer_list = [racers_file["inactive"],racers_file["active"]]
@@ -142,16 +144,18 @@ class vexologist(object):
             for player in player_sublist.items():
                 name = player[0]
                 emoji = player[1]["emoji"]
+                origin = player[1]["origins"]
                 if "team" in player[1]:
                     team  = player[1]["team"]
                 else:
                     team = None
-                self.cur.execute("INSERT OR IGNORE into Racers (Emoji,Team, Name) VALUES (?,?,?)",(emoji,team,name))
+                self.cur.execute("INSERT OR IGNORE into Racers (Emoji,Team, Name, Origins) VALUES (?,?,?,?)",(emoji,team,name,origin))
         self.conn.commit()
 
     def update_racer_stats(self):
-        last_update = sorted(listdir('../json/racers/'))[-1]
-        with open(path.join('../json/racers/',last_update), 'r') as f:
+        #update the stats which aren't used by Vex for parsing but are useful when looking at the data
+        last_update = sorted(listdir(self.racers_json_path))[-1]
+        with open(path.join(self.racers_json_path,last_update), 'r') as f:
             racers_file = json.load(f)
             
         allplayer_list = [racers_file["inactive"],racers_file["active"]]
@@ -160,11 +164,16 @@ class vexologist(object):
                 name = player[0]
                 stats = player[1]['stats']
                 total_stats = sum(stats.values())
-                spice = player[1]['spice']
+                if 'spice' in player[1]:
+                    spice = player[1]['spice']
+                else:
+                    #incase an old season is read in that predates spice
+                    spice = {"mu":None,"sigma":None}
                 self.cur.execute("UPDATE Racers SET Spice_mu =?,Spice_sigma =?, Stats_total =?,Stat_ED =?,Stat_BU =?,Stat_VP =?,Stat_LF =?,"+
                          "Stat_CH =?,Stat_CT =?,Stat_HL =?,Stat_SG =?,Stat_MG =?,"+
                          "Stat_EY =?,Stat_AG =? WHERE Name = ?",(spice["mu"],spice["sigma"],total_stats,stats['ED'],stats['BU'],stats['VP'],stats['LF'],stats['CH'],stats['CT'],stats['HL'],stats['SG'],stats['MG'],stats['EY'],stats['AG'],name))
         self.conn.commit()
+        
     #parse race and update racers records
     def parse_race(self,race_json):
         colnames = ["Firsts","Seconds","Thirds","Fourths","Fifths","Sixths","Sevenths","Eighths"]
@@ -208,15 +217,6 @@ class vexologist(object):
             name_emoji = self.race_name.search(line)
             bee_check  = self.beelspin.search(line)
 
-            if player_swapped_next_line:
-                #split up the line and reform, assumes players have a two-part name
-                name = ' '.join(line.split(' ')[0:2])[2:]
-                self.cur.execute("SELECT Emoji FROM Racers WHERE Name = ?",(name,))
-                emoji = self.cur.fetchone()[0]
-                racers_temp_totals[emoji] = self.insert_racer(emoji)
-                player_swapped_next_line = False
-                continue
-            
             if name_emoji == None or bee_check:
                 #if line doesn't contain a name match, return
                 #or if line has a beel of fortune spin, which false match with the naming highlights
@@ -234,7 +234,7 @@ class vexologist(object):
                 self.insert_racer(emoji,pitstop=True)
 
             elif self.roguemarshaled.search(line):
-                player_swapped_next_line = True #don't think anything needs doing? maybe flag for the replacement on next line?
+                pass #currently not anything to do if this happens
 
 
             elif self.steal.search(line):
@@ -245,7 +245,7 @@ class vexologist(object):
                 emoji = steal_split[0][2:]
                 stolen_from = steal_split[3]
                                
-                racers_temp_totals[emoji] = self.insert_racer(emoji,'new_racer?',None)#need to link this to peeps.json to pull out who it is
+                racers_temp_totals[emoji] = self.insert_racer(emoji)#need to link this to peeps.json to pull out who it is
 
                 
             elif self.voided.search(line):
@@ -256,40 +256,66 @@ class vexologist(object):
                 void_split = line.split(' ')
                 voided = void_split[0][2:]
                 emoji = void_split[6]
-                racers_temp_totals[emoji] =  self.insert_racer(emoji,'new_racer?',None)#need to link this to peeps.json to pull out who it is
+                racers_temp_totals[emoji] =  self.insert_racer(emoji)#need to link this to peeps.json to pull out who it is
 
                 
             elif self.bonk_S.search(line):
                 #print("succesful bonk")
+                if emoji not in racers_temp_totals:
+                    racers_temp_totals[emoji] = self.insert_racer(emoji)
                 racers_temp_totals[emoji][0] += 1
+                
             elif self.bonk_F.search(line):
                 #print("bonk failed")
+                if emoji not in racers_temp_totals:
+                    racers_temp_totals[emoji] = self.insert_racer(emoji)
                 racers_temp_totals[emoji][1] += 1
+                
             elif self.plough.search(line):
                 #print("ploughed")
+                if emoji not in racers_temp_totals:
+                    racers_temp_totals[emoji] = self.insert_racer(emoji)
                 racers_temp_totals[emoji][2] +=1
+                
             elif self.swerve.search(line):
                 #print("sweved")
+                if emoji not in racers_temp_totals:
+                    racers_temp_totals[emoji] = self.insert_racer(emoji)
                 racers_temp_totals[emoji][3] +=1
+                
             elif self.trick_FO.search(line):
+                if emoji not in racers_temp_totals:
+                    racers_temp_totals[emoji] = self.insert_racer(emoji)
                 #print("failed trick landing")
                 racers_temp_totals[emoji][4] +=1
+                
             elif self.trick_FL.search(line):
+                if emoji not in racers_temp_totals:
+                    racers_temp_totals[emoji] = self.insert_racer(emoji)
                 #print("failed trick missed")
                 racers_temp_totals[emoji][5] +=1
+                
             elif self.trick_S.search(line):
+                if emoji not in racers_temp_totals:
+                    racers_temp_totals[emoji] = self.insert_racer(emoji)
                 #print("trick success")
                 racers_temp_totals[emoji][6] +=1
+                
             elif self.smile.search(line):
                 #print("sun smiled")
                 emoji = line.split(' ')[5] #sun smiles has emoji in weird place
+                if emoji not in racers_temp_totals:
+                    racers_temp_totals[emoji] = self.insert_racer(emoji)
                 racers_temp_totals[emoji][7] +=1
+                
             elif self.cloud.search(line):
                 #print("clouded")
                 emoji = line.split(' ')[4]#clouds descends has emoji in a weird place
+                if emoji not in racers_temp_totals:
+                    racers_temp_totals[emoji] = self.insert_racer(emoji)
                 racers_temp_totals[emoji][8] +=1
+                
             elif self.urn_smashed.search(line):
-                #not clear what this does yet
                 racers_temp_totals[emoji][9] +=1
 
         for racer_temp in racers_temp_totals.items():
@@ -314,18 +340,18 @@ class vexologist(object):
 if __name__ == "__main__":
     #test = "../Vexologist/The Cider Gravy Boat_2_2021-08-20 22:12:16.json"
 
-    database = './vexbase_BETAMAX.db'
+    database = './test.db'
 
-    datahandler = vexologist(database)
+    datahandler = vexologist(database, '../json/racers/')
 
-    
+
     #test = "../Vexologist/The Whoop-ass Jug_4_2021-08-21 11:14:17.json"
     #with open(test, 'r') as f:
     #    test_data = json.load(f) 
     #datahandler.parse_race(test_data)
 
-    data_dir = "../json/races/"
-
+    data_dir = "../json/BETAMAX/races/"
+    
     datahandler.update_racers()
     datahandler.update_racer_stats()
     
