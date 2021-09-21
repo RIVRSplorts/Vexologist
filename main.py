@@ -7,10 +7,6 @@ from os import path, listdir
 # :add results to database?
 # :record what files have been parsed
 
-
-
-
-
 class vexologist(object):
     def __init__(self,database,racers_json_path='../json/racers'):
 
@@ -24,7 +20,7 @@ class vexologist(object):
 	    "Emoji"           TEXT UNIQUE,
 	    "Name"	      TEXT,
             "Team"            TEXT,
-            "Origins"          TEXT,
+            "Origins"         TEXT,
             "Races"           INTEGER DEFAULT 0,
             "Bonks"	      INTEGER DEFAULT 0,
 	    "Failed_Bonks"    INTEGER DEFAULT 0,
@@ -154,6 +150,7 @@ class vexologist(object):
 
     def update_racer_stats(self):
         #update the stats which aren't used by Vex for parsing but are useful when looking at the data
+        #also updates the players team for convenience
         last_update = sorted(listdir(self.racers_json_path))[-1]
         with open(path.join(self.racers_json_path,last_update), 'r') as f:
             racers_file = json.load(f)
@@ -164,14 +161,19 @@ class vexologist(object):
                 name = player[0]
                 stats = player[1]['stats']
                 total_stats = sum(stats.values())
+                if "team" in player[1]:
+                    team = player[1]["team"]
+                else:
+                    team = None
+                    
                 if 'spice' in player[1]:
                     spice = player[1]['spice']
                 else:
                     #incase an old season is read in that predates spice
                     spice = {"mu":None,"sigma":None}
-                self.cur.execute("UPDATE Racers SET Spice_mu =?,Spice_sigma =?, Stats_total =?,Stat_ED =?,Stat_BU =?,Stat_VP =?,Stat_LF =?,"+
+                self.cur.execute("UPDATE Racers SET Team =?, Spice_mu =?,Spice_sigma =?, Stats_total =?,Stat_ED =?,Stat_BU =?,Stat_VP =?,Stat_LF =?,"+
                          "Stat_CH =?,Stat_CT =?,Stat_HL =?,Stat_SG =?,Stat_MG =?,"+
-                         "Stat_EY =?,Stat_AG =? WHERE Name = ?",(spice["mu"],spice["sigma"],total_stats,stats['ED'],stats['BU'],stats['VP'],stats['LF'],stats['CH'],stats['CT'],stats['HL'],stats['SG'],stats['MG'],stats['EY'],stats['AG'],name))
+                         "Stat_EY =?,Stat_AG =? WHERE Name = ?",(team,spice["mu"],spice["sigma"],total_stats,stats['ED'],stats['BU'],stats['VP'],stats['LF'],stats['CH'],stats['CT'],stats['HL'],stats['SG'],stats['MG'],stats['EY'],stats['AG'],name))
         self.conn.commit()
         
     #parse race and update racers records
@@ -340,17 +342,16 @@ class vexologist(object):
 if __name__ == "__main__":
     #test = "../Vexologist/The Cider Gravy Boat_2_2021-08-20 22:12:16.json"
 
-    database = './test.db'
+    database = './Season.db'
 
     datahandler = vexologist(database, '../json/racers/')
-
 
     #test = "../Vexologist/The Whoop-ass Jug_4_2021-08-21 11:14:17.json"
     #with open(test, 'r') as f:
     #    test_data = json.load(f) 
     #datahandler.parse_race(test_data)
 
-    data_dir = "../json/BETAMAX/races/"
+    data_dir = "../json/races/"
     
     datahandler.update_racers()
     datahandler.update_racer_stats()
@@ -365,5 +366,4 @@ if __name__ == "__main__":
             pass
     
 
-    
     
