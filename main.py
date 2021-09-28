@@ -8,7 +8,7 @@ from os import path, listdir
 # :record what files have been parsed
 
 class vexologist(object):
-    def __init__(self,database,racers_json_path='../json/racers'):
+    def __init__(self,database,season,racers_json_path='../json/racers'):
 
         self.racers_json_path = racers_json_path
 
@@ -64,7 +64,11 @@ class vexologist(object):
             PRIMARY KEY("Race_ID")
             )''')
 
-            
+            self.cur.execute('''CREATE TABLE "Meta" (
+            "Season" TEXT
+            )''')
+            self.cur.execute("INSERT INTO Meta (Season) Values (?)", (season,))          
+            self.conn.commit()
         else:
             #has to be duplicated as otherwise sqlite3.connect creates the database before the if check
             self.conn = sqlite3.connect(database)
@@ -188,6 +192,17 @@ class vexologist(object):
         racers_temp_totals = {}
         events_temp_total = {}
 
+        game_season = race_json["metadata"]["season"]
+        self.cur.execute("SELECT Season FROM Meta")
+        data_season = self.cur.fetchone()[0]
+
+        if game_season == data_season:
+            pass
+        else:
+            #if don't match, return early
+            print('database season doesn\'t match, returning early without parsing race')
+            return
+                             
         
         #check if this race has been parsed before
         self.cur.execute("SELECT * FROM Races WHERE Cup_Name = ? AND Race_Num = ?", (cup, race_n))
@@ -344,7 +359,7 @@ if __name__ == "__main__":
 
     database = './Season.db'
 
-    datahandler = vexologist(database, '../json/racers/')
+    datahandler = vexologist(database,'Season\ 2', '../json/racers/')
 
     #test = "../Vexologist/The Whoop-ass Jug_4_2021-08-21 11:14:17.json"
     #with open(test, 'r') as f:
