@@ -9,7 +9,7 @@ from os import path, listdir
 
 class vexologist(object):
     def __init__(self,database,season,racers_json_path='../json/racers'):
-
+        self.season = season
         self.racers_json_path = racers_json_path
 
         if not path.isfile(database):
@@ -65,8 +65,24 @@ class vexologist(object):
             )''')
 
             self.cur.execute('''CREATE TABLE "Meta" (
-            "Season" TEXT
+            "Season"        TEXT,
+            "pitstop"       INTEGER,
+            "roster_change" INTEGER,
+            "rps_win"       INTEGER
             )''')
+
+            self.cur.execute('''CREATE TABLE "Election" (
+            "Option"        TEXT UNIQUE,
+            "Red Snappers"  INTEGER DEFAULT 0,
+            "Orange Peels"  INTEGER DEFAULT 0,
+            "Yellow Submarines" INTEGER DEFAULT 0,
+            "Green Tea"     INTEGER DEFAULT 0,
+            "Blue Jays"     INTEGER DEFAULT 0,
+            "Purple Reign"  INTEGER DEFAULT 0,
+            "Black Ice"     INTEGER DEFAULT 0,
+            "White Noise"   INTEGER DEFAULT 0
+            )''')
+            
             self.cur.execute("INSERT INTO Meta (Season) Values (?)", (season,))          
             self.conn.commit()
         else:
@@ -80,7 +96,7 @@ class vexologist(object):
           
         self.pit_stop= re.compile("(.*) waved from the Pit Stop!")
         self.bonk_S  = re.compile("bonked .* off the track")
-        self.bonk_F  = re.compile("bonked into")
+        self.bonk_F  = [re.compile("bonked into"),re.compile("tried to bonk")]
         self.plough  = re.compile("ploughed through a snowman")
         self.swerve  = re.compile("swerved to avoid a snowman")
         self.upgrade = re.compile("")
@@ -111,6 +127,20 @@ class vexologist(object):
                                "urns smashed","1st","2nd","3rd","4th",
                                "5th","6th","7th","8th"]
 
+
+    def update_misc(self,other_var_json):
+        for name,teams in other_var_json["blessings"].items():
+            vals = (name,) + tuple(teams.values())
+            self.cur.execute("INSERT OR REPLACE INTO Election VALUES(?, ?,?,?,?, ?,?,?,?) ",vals)
+        
+
+        pitstops = other_var_json["flagdata"]["pitstop"]
+        roster_changes = other_var_json["flagdata"]["roster_change"]
+        rps_wins  = other_var_json["flagdata"]["rps_win"]
+        self.cur.execute("UPDATE Meta SET pitstop = ?, roster_change = ?, rps_win = ? WHERE Season = ?",(pitstops, roster_changes, rps_wins, self.season))
+        
+        self.conn.commit()
+        
     def insert_racer(self,emoji,name='',team='',pitstop=False):
         self.cur.execute("SELECT * FROM racers WHERE Emoji = ?",(emoji,))
         ret = self.cur.fetchone()
@@ -201,6 +231,7 @@ class vexologist(object):
         else:
             #if don't match, return early
             print('database season doesn\'t match, returning early without parsing race')
+            #should delete the database and reset it?
             return
                              
         
@@ -282,7 +313,7 @@ class vexologist(object):
                     racers_temp_totals[emoji] = self.insert_racer(emoji)
                 racers_temp_totals[emoji][0] += 1
                 
-            elif self.bonk_F.search(line):
+            elif self.bonk_F[0].search(line) or self.bonk_F[1].search(line):
                 #print("bonk failed")
                 if emoji not in racers_temp_totals:
                     racers_temp_totals[emoji] = self.insert_racer(emoji)
@@ -359,7 +390,7 @@ if __name__ == "__main__":
 
     database = './Season.db'
 
-    datahandler = vexologist(database,'Season\ 2', '../json/racers/')
+    datahandler = vexologist(database,'Season 2', '../json/racers/')
 
     #test = "../Vexologist/The Whoop-ass Jug_4_2021-08-21 11:14:17.json"
     #with open(test, 'r') as f:
@@ -367,6 +398,12 @@ if __name__ == "__main__":
     #datahandler.parse_race(test_data)
 
     data_dir = "../json/races/"
+    misc_dir = "../json/misc/"
+
+    d = listdir(misc_dir)
+    d = sorted(d)
+    dpath = path.join(misc_dir,d[-1])
+    datahandler.update_misc(json.load(open(dpath,'r')))
     
     datahandler.update_racers()
     datahandler.update_racer_stats()
